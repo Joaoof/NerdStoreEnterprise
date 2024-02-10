@@ -4,6 +4,7 @@ using NSE.Indetity.API.Models;
 
 namespace NSE.Indetity.API.Controllers
 {
+    [Route("api/indetity")]
     public class AuthController : Controller
     {
         private readonly UserManager<IdentityUser> _userManager;
@@ -15,6 +16,7 @@ namespace NSE.Indetity.API.Controllers
             _userManager = userManager;
         }
 
+        [HttpPost("new-account")]
         public async Task<ActionResult> Register(UserRegister userRegister)
         {
             if (!ModelState.IsValid)
@@ -41,9 +43,22 @@ namespace NSE.Indetity.API.Controllers
 
         }
 
+        [HttpPost("authenticate")]
         public async Task<ActionResult> Login(UserLogin userLogin)
         {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest();
+            }
 
+            var result = await _signInManager.PasswordSignInAsync(userLogin.Email, userLogin.Password, isPersistent: false, lockoutOnFailure: true); // valindando conforme a senha
+
+            if (result.Succeeded)
+            {
+                return Ok();
+            }
+
+            return BadRequest();
         }
     }
 }

@@ -1,6 +1,12 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using NSE.Indetity.API.Extensions;
 using NSE.Indetity.API.Models;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace NSE.Indetity.API.Controllers
 {
@@ -10,11 +16,13 @@ namespace NSE.Indetity.API.Controllers
     {
         private readonly UserManager<IdentityUser> _userManager;
         private readonly SignInManager<IdentityUser> _signInManager;
+        private readonly AppSettings _appSettings;
 
-        public AuthController(SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager)
+        public AuthController(SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppSettings> appSettings)
         {
             _signInManager = signInManager;
             _userManager = userManager;
+            _appSettings = appSettings.Value;
         }
 
         [HttpPost("new-account")]
@@ -37,7 +45,7 @@ namespace NSE.Indetity.API.Controllers
             if (result.Succeeded)
             {
                 await _signInManager.SignInAsync(user, isPersistent: false);
-                return Ok();
+                return Ok(await GenerateJwt(userRegister.Email));
             }
 
             return BadRequest();
@@ -56,10 +64,64 @@ namespace NSE.Indetity.API.Controllers
 
             if (result.Succeeded)
             {
-                return Ok();
+                return Ok(await GenerateJwt(userLogin.Email));
             }
 
             return BadRequest();
         }
+
+        [HttpPost]
+        public async Task<UserResponseLogin> GenerateJwt(string email)
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            var claims = await _userManager.GetClaimsAsync(user);
+            var userRoles = await _userManager.GetRolesAsync(user);
+
+            claims.Add(new Claim(type: JwtRegisteredClaimNames.Sub, value: user.Id)); // identifica o principal assunto do jwt (id do user)
+            claims.Add(new Claim(type: JwtRegisteredClaimNames.Email, value: user.Email)); // Contém o endereço de e-mail do usuário.
+            claims.Add(new Claim(type: JwtRegisteredClaimNames.Jti, value: Guid.NewGuid().ToString())); //  Um identificador exclusivo para rastrear tokens.
+            claims.Add(new Claim(type: JwtRegisteredClaimNames.Nbf, value: ToUnixEpochDate(DateTime.UtcNow).ToString())); // Define o momento em que o token se torna válido (em formato de data Unix).
+            claims.Add(new Claim(type: JwtRegisteredClaimNames.Iat, value: ToUnixEpochDate(DateTime.UtcNow).ToString(), ClaimValueTypes.Integer64)); // Indica o momento em que o token foi emitido (também em formato de data Unix).
+
+            foreach ( var userRole in userRoles)
+            {
+                claims.Add(new Claim(type: "role", value: userRole));
+            } // é como um título ou uma permissão que o usuário tem.
+
+            var identityClaims = new ClaimsIdentity(); //  você está criando uma nova identidade vazia, que pode ser usada para representar informações sobre um usuário autenticado.
+            identityClaims.AddClaims(claims); // Essas reivindicações contêm informações importantes, como o ID do usuário, endereço de e-mail, papéis (roles), entre outros.
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_appSettings.Secret);
+
+            var token = tokenHandler.CreateToken(new SecurityTokenDescriptor
+            {
+                Issuer = _appSettings.Issuer,
+                Audience = _appSettings.ValidIn,
+                Subject = identityClaims,
+                Expires = DateTime.UtcNow.AddHours(_appSettings.ExpirationHours),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), algorithm: SecurityAlgorithms.HmacSha256Signature)
+            });
+
+            var encodedToken = tokenHandler.WriteToken(token); // gera um token codificado com base na minha key 
+
+
+            var response = new UserResponseLogin
+            {
+                AcessToken = encodedToken,
+                ExpiresIn = TimeSpan.FromHours(_appSettings.ExpirationHours).TotalSeconds,
+                UserToken = new UserToken
+                {
+                    Id = user.Id,
+                    Email = user.Email,
+                    Claims = claims.Select(c => new UserClaim { Type = c.Type, Value = c.Value })
+                }
+            };
+
+            return response;
+        }
+
+        private static long ToUnixEpochDate(DateTime date) => (long)Math.Round((date.ToUniversalTime() - new DateTimeOffset(year: 1970, month: 1,
+        day: 1, hour: 0, minute: 0, second: 0, offset: TimeSpan.Zero)).TotalSeconds); // O método privado ToUnixEpochDate converte uma data e hora para o formato de data Unix (segundos desde a época Unix).
     }
 }

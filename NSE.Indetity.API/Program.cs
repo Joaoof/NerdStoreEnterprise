@@ -33,7 +33,7 @@ builder.Services.AddAuthentication(configureOptions: options =>
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ValidateIssuer = true,
-        ValidateAudience = true
+        ValidateAudience = true,
         ValidAudience = appSettings.ValidIn,
         ValidIssuer = appSettings.Issuer
     };

@@ -4,6 +4,7 @@ using NSE.Indetity.API.Models;
 
 namespace NSE.Indetity.API.Controllers
 {
+    [ApiController]
     [Route("api/indetity")]
     public class AuthController : Controller
     {

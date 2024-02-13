@@ -12,7 +12,7 @@ namespace NSE.Indetity.API.Controllers
 {
     [ApiController]
     [Route("api/indetity")]
-    public class AuthController : Controller
+    public class AuthController : MainController
     {
         private readonly UserManager<IdentityUser> _userManager;
         private readonly SignInManager<IdentityUser> _signInManager;
@@ -30,7 +30,7 @@ namespace NSE.Indetity.API.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest();
+                return CustomResponse(ModelState);
             }
 
             var user = new IdentityUser
@@ -44,11 +44,15 @@ namespace NSE.Indetity.API.Controllers
 
             if (result.Succeeded)
             {
-                await _signInManager.SignInAsync(user, isPersistent: false);
-                return Ok(await GenerateJwt(userRegister.Email));
+                return CustomResponse(await GenerateJwt(userRegister.Email));
             }
 
-            return BadRequest();
+            foreach (var error in result.Errors)
+            {
+                AddErrorsProcess(error.Description);
+            } // caso haja erro na hora de criar um user que ele salve esse erro
+
+            return CustomResponse();
 
         }
 
@@ -57,17 +61,24 @@ namespace NSE.Indetity.API.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest();
+                return CustomResponse(ModelState);
             }
 
             var result = await _signInManager.PasswordSignInAsync(userLogin.Email, userLogin.Password, isPersistent: false, lockoutOnFailure: true); // valindando conforme a senha
 
             if (result.Succeeded)
             {
-                return Ok(await GenerateJwt(userLogin.Email));
+                return CustomResponse(await GenerateJwt(userLogin.Email));
             }
 
-            return BadRequest();
+            if (result.IsLockedOut)
+            {
+                AddErrorsProcess("User blocked due to valid attempts");
+                return CustomResponse();
+            }
+
+            AddErrorsProcess("Incorrect username or passwords");
+            return CustomResponse();
         }
 
         [HttpPost]

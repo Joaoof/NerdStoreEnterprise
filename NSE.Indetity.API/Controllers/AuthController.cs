@@ -86,25 +86,41 @@ namespace NSE.Indetity.API.Controllers
         {
             var user = await _userManager.FindByEmailAsync(email);
             var claims = await _userManager.GetClaimsAsync(user);
-            var userRoles = await _userManager.GetRolesAsync(user);
 
+            var identityClaims = await GetUserClaims(claims, user); 
+            var encodedToken = EncodedToken(identityClaims);
+
+            return GetResponseToken(encodedToken, user, claims);
+        }
+
+        private async Task<ClaimsIdentity> GetUserClaims(ICollection<Claim> claims, IdentityUser user)
+        {
+            var userRoles = await _userManager.GetRolesAsync(user);
+                
             claims.Add(new Claim(type: JwtRegisteredClaimNames.Sub, value: user.Id)); // identifica o principal assunto do jwt (id do user)
             claims.Add(new Claim(type: JwtRegisteredClaimNames.Email, value: user.Email)); // Contém o endereço de e-mail do usuário.
             claims.Add(new Claim(type: JwtRegisteredClaimNames.Jti, value: Guid.NewGuid().ToString())); //  Um identificador exclusivo para rastrear tokens.
             claims.Add(new Claim(type: JwtRegisteredClaimNames.Nbf, value: ToUnixEpochDate(DateTime.UtcNow).ToString())); // Define o momento em que o token se torna válido (em formato de data Unix).
             claims.Add(new Claim(type: JwtRegisteredClaimNames.Iat, value: ToUnixEpochDate(DateTime.UtcNow).ToString(), ClaimValueTypes.Integer64)); // Indica o momento em que o token foi emitido (também em formato de data Unix).
 
-            foreach ( var userRole in userRoles)
+            foreach (var userRole in userRoles)
             {
                 claims.Add(new Claim(type: "role", value: userRole));
             } // é como um título ou uma permissão que o usuário tem.
 
-            var identityClaims = new ClaimsIdentity(); //  você está criando uma nova identidade vazia, que pode ser usada para representar informações sobre um usuário autenticado.
-            identityClaims.AddClaims(claims); // Essas reivindicações contêm informações importantes, como o ID do usuário, endereço de e-mail, papéis (roles), entre outros.
+            var identityClaims = new ClaimsIdentity();
+            foreach(var claim in claims)
+    {
+                identityClaims.AddClaim(claim);
+            }
 
+            return identityClaims;
+        }
+
+        private string EncodedToken(ClaimsIdentity identityClaims)
+        {
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.ASCII.GetBytes(_appSettings.Secret);
-
             var token = tokenHandler.CreateToken(new SecurityTokenDescriptor
             {
                 Issuer = _appSettings.Issuer,
@@ -114,10 +130,13 @@ namespace NSE.Indetity.API.Controllers
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), algorithm: SecurityAlgorithms.HmacSha256Signature)
             });
 
-            var encodedToken = tokenHandler.WriteToken(token); // gera um token codificado com base na minha key 
+           return tokenHandler.WriteToken(token);
 
+        }
 
-            var response = new UserResponseLogin
+        private UserResponseLogin GetResponseToken(string encodedToken, IdentityUser user, IEnumerable<Claim> claims)
+        {
+            return new UserResponseLogin
             {
                 AcessToken = encodedToken,
                 ExpiresIn = TimeSpan.FromHours(_appSettings.ExpirationHours).TotalSeconds,
@@ -128,8 +147,6 @@ namespace NSE.Indetity.API.Controllers
                     Claims = claims.Select(c => new UserClaim { Type = c.Type, Value = c.Value })
                 }
             };
-
-            return response;
         }
 
         private static long ToUnixEpochDate(DateTime date) => (long)Math.Round((date.ToUniversalTime() - new DateTimeOffset(year: 1970, month: 1,

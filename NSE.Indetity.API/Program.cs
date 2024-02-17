@@ -3,66 +3,37 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using NS.Identidade.API.Extensions;
+using NSE.Indetity.API.Configuration;
 using NSE.Indetity.API.Data;
 using NSE.Indetity.API.Extensions;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
+
+IHostEnvironment env = builder.Environment;
+
+builder.Configuration
+    .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettingsDevelopment.{env.EnvironmentName}.json", optional: true, true);
+
+
 // Add services to the container.
+builder.Services.AddIdentityConfiguration(builder.Configuration) ;
 
-builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddApiConfiguration(); //conf api
 
-builder.Services.AddDefaultIdentity<IdentityUser>()
-    .AddRoles<IdentityRole>()
-    .AddErrorDescriber<IdentityMessagesPortugues>()
-    .AddEntityFrameworkStores<ApplicationDbContext>()
-    .AddDefaultTokenProviders();
+builder.Services.AddSwaggerConfiguration(); // conf swagger
 
-var appSettingsSection = builder.Configuration.GetSection(key: "AppSettings");
-builder.Services.Configure<AppSettings>(appSettingsSection);
-
-var appSettings = appSettingsSection.Get<AppSettings>();
-var key = Encoding.ASCII.GetBytes(appSettings.Secret);
-
-builder.Services.AddAuthentication(configureOptions: options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-}).AddJwtBearer(bearerOptions =>
-{
-    bearerOptions.RequireHttpsMetadata = true;
-    bearerOptions.SaveToken = true;
-    bearerOptions.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
-    {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(key),
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidAudience = appSettings.ValidIn,
-        ValidIssuer = appSettings.Issuer
-    };
-}); //conf jwt
-
-builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwaggerConfiguration(builder.Environment);
 
-app.UseHttpsRedirection();
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapControllers();
+app.UseApiConfiguration();
 
 app.Run();
